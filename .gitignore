@@ -1,5 +1,27 @@
+# Virtual environments
 .venv/
+env/
+venv/
+
+# Python bytecode & cache
 __pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Distribution & Build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Wallets and Secrets
 .keys/
 .env
+*.pem
+*.key
+
+# Tooling
 .helix-overflow/
+.coverage
+htmlcov/

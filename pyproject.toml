@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "confam-wallet"
+version = "1.0.0"
+description = "A production-grade non-custodial Ethereum CLI wallet"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+    { name = "Confam Contributors" }
+]
+keywords = ["ethereum", "wallet", "cli", "crypto", "web3", "eip-1559", "erc-20"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Office/Business :: Financial",
+]
+dependencies = [
+    "eth-account>=0.13,<1.0",
+    "eth-utils>=2.0.0",
+    "eth-abi>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "build>=1.0",
+]
+
+[project.scripts]
+confam = "confam.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["confam*"]
