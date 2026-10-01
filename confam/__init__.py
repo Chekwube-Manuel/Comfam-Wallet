@@ -1,4 +1,3 @@
-"""Confam Wallet - Non-custodial Ethereum CLI wallet."""
+"""Confam Wallet - Non-custodial Multi-Chain (Ethereum & Solana) CLI wallet."""
 
-__version__ = "1.0.0"
-
+__version__ = "1.1.0"

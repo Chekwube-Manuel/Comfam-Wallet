@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "confam-wallet"
-version = "1.0.0"
-description = "A production-grade non-custodial Ethereum CLI wallet"
+version = "1.1.0"
+description = "A production-grade non-custodial multi-chain (Ethereum & Solana) CLI wallet"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [
     { name = "Confam Contributors" }
 ]
-keywords = ["ethereum", "wallet", "cli", "crypto", "web3", "eip-1559", "erc-20"]
+keywords = ["ethereum", "solana", "wallet", "cli", "crypto", "web3", "eip-1559", "erc-20", "spl-tokens"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -33,6 +33,7 @@ dependencies = [
     "eth-account>=0.13,<1.0",
     "eth-utils>=2.0.0",
     "eth-abi>=4.0.0",
+    "pycryptodome>=3.20.0",
 ]
 
 [project.optional-dependencies]

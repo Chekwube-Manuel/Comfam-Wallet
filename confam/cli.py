@@ -26,6 +26,7 @@ from confam.keystore import (
     unlock_keystore,
 )
 from confam.rpc import RpcClient
+from confam.solana.cli import register_solana_subparser
 from confam.tx import (
     build_transaction,
     sign_transaction,
@@ -484,6 +485,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_rpc(p)
     p.set_defaults(func=cmd_broadcast_tx)
 
+    # Register Solana commands
+    register_solana_subparser(sub)
+
     return parser
 
 
@@ -495,6 +499,10 @@ def main(argv=None) -> int:
         if args.command in ("balance", "token-balance"):
             if not getattr(args, "keyfile", None) and not getattr(args, "address", None):
                 parser.error(f"{args.command} requires either --keyfile or --address")
+        elif args.command == "solana":
+            if getattr(args, "solana_command", None) in ("balance", "token-balance", "tokens"):
+                if not getattr(args, "keyfile", None) and not getattr(args, "address", None):
+                    parser.error(f"solana {args.solana_command} requires either --keyfile or --address")
         return args.func(args)
     except ConfamError as exc:
         if getattr(args, "debug", False):

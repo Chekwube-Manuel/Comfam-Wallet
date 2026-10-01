@@ -2,186 +2,239 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-22%20passed-brightgreen.svg)]()
+[![PyPI](https://img.shields.io/pypi/v/confam-wallet.svg)](https://pypi.org/project/confam-wallet/)
+[![Tests](https://img.shields.io/badge/tests-29%20passed-brightgreen.svg)]()
 
-A production-grade, non-custodial Ethereum CLI wallet built in Python.
+A production-grade, non-custodial multi-chain CLI wallet for **Ethereum** and **Solana** built in Python.
 
-Keys are generated directly on your machine using the operating system's cryptographic random number generator (CSPRNG), encrypted inside a password-protected Web3 V3 keystore (scrypt KDF), and every signature is produced locally in-memory. The network is only contacted for public reads (nonces, balances, gas estimates) and to broadcast pre-signed raw transactions. **No private key material or unencrypted secrets ever leave your machine.**
+Keys are generated directly on your machine using the operating system's cryptographic random number generator (CSPRNG), encrypted inside password-protected keystores (scrypt KDF), and every signature is produced locally in-memory. The network is only contacted for public reads (nonces, balances, blockhashes, gas estimates) and to broadcast pre-signed raw transactions. **No private key material or unencrypted secrets ever leave your machine.**
+
+---
+
+## Supported Ecosystems
+
+| Network | Cryptography | Native Asset | Token Standard |
+| :--- | :--- | :--- | :--- |
+| **Ethereum & EVM Chains** | `secp256k1` / Keccak-256 | ETH (or native gas) | ERC-20 (USDT, USDC, DAI, etc.) |
+| **Solana** | `Ed25519` (RFC 8032) / SHA-512 | SOL (Lamports) | SPL Tokens (USDC, USDT, etc.) |
 
 ---
 
 ## Key Features & Production Hardening
 
+- **Multi-Chain Architecture**: Seamlessly manage both Ethereum (EVM) and Solana (Ed25519) from a single CLI.
 - **Non-Custodial & Air-Gapped Capable**: Offline transaction signing (`sign-tx`) decoupled from network broadcast (`broadcast-tx`).
-- **Lossless Financial Precision**: Powered by Python's `Decimal` arithmetic—avoids binary float truncation bugs (e.g., standard `0.29 ETH` float truncation).
+- **Lossless Financial Precision**: Powered by Python's `Decimal` arithmetic—avoids binary float truncation bugs (e.g. `0.29 ETH` or `0.05 SOL`).
 - **Keystore Overwrite Guards**: Prevents accidental wallet destruction and permanent fund loss; requires explicit `--force` to overwrite.
 - **Cross-Platform Security Hardening**: Restrictive file permissions (`0o600` on POSIX and NTFS inheritance lockdown on Windows).
 - **EIP-1559 & Legacy Gas Market**: Automatic fee estimation with congestion buffer, priority fee floors, and fallback to legacy `gasPrice`.
-- **Pre-Flight Balance Validations**: Checks sender balance for `value + (gas_limit * max_fee)` before signing to prevent stuck or rejected transactions.
-- **ERC-20 Token Engine**: Query metadata (name, symbol, decimals), query balances, and transfer tokens (USDT, USDC, DAI, etc.).
-- **Transaction Receipt Polling**: `--wait` flag on `send-tx` and standalone `receipt` command to inspect execution status, block inclusion, and effective gas fees.
+- **Pre-Flight Balance Validations**: Checks sender balance before signing to prevent stuck or rejected transactions.
+- **Token Engines**: Full support for ERC-20 tokens on EVM and SPL tokens on Solana.
+- **Transaction Receipt Polling**: `--wait` flag on transfers to inspect execution status, block inclusion, and confirmation.
 - **Flexible Credential Ingestion**: Pass passwords via hidden interactive prompt, `CONFAM_PASSWORD` environment variable, `--password-stdin`, or `--password` CLI flag.
 
 ---
 
 ## Installation
 
-### Option 1: Install from Wheel / Source (Recommended)
+### From PyPI (Recommended)
 
 ```bash
-# Clone the repository
+pip install confam-wallet
+```
+
+Or install globally as an isolated CLI via `pipx`:
+
+```bash
+pipx install confam-wallet
+```
+
+### From Source
+
+```bash
 git clone https://github.com/Chekwube-Manuel/Comfam-Wallet.git
 cd Comfam-Wallet
-
-# Create virtual environment
 python -m venv .venv
 
-# Activate virtual environment
 # Windows:
 .\.venv\Scripts\activate
 # Linux / macOS:
 source .venv/bin/activate
 
-# Install package and dependencies
-pip install .
+pip install -e .
 ```
 
-After installation, the `confam` command is available directly in your terminal:
+Verify installation:
 ```bash
 confam --version
-# Output: confam 1.0.0
-```
-
-### Option 2: Standalone Global CLI via `pipx`
-
-```bash
-pipx install .
+# Output: confam 1.1.0
 ```
 
 ---
 
 ## Configuration
 
-| Environment Variable | Default Option          | Description                                  |
-| -------------------- | ----------------------- | -------------------------------------------- |
-| `CONFAM_RPC_URL`     | `http://127.0.0.1:8545` | Ethereum JSON-RPC endpoint (Infura, Alchemy, Anvil, etc.) |
-| `CONFAM_PASSWORD`    | *(None)*                | Keystore decryption password (avoids prompts) |
+| Environment Variable | Default Option | Description |
+| :--- | :--- | :--- |
+| `CONFAM_RPC_URL` | `http://127.0.0.1:8545` | Ethereum / EVM JSON-RPC endpoint |
+| `CONFAM_SOLANA_RPC_URL` | `https://api.mainnet-beta.solana.com` | Solana JSON-RPC endpoint |
+| `CONFAM_PASSWORD` | *(None)* | Keystore decryption password (avoids prompts) |
 
-You can also pass `--rpc-url` / `-r` directly to any network-dependent command to override the environment variable.
+You can also pass `--rpc-url` / `-r` directly to any command to override the default endpoint.
 
 ---
 
-## CLI Command Reference
+## Solana (SOL & SPL Token) CLI Reference
 
-### 1. Create a New Wallet
+All Solana commands are namespaced under `confam solana`:
 
-Generates a fresh Ethereum keypair locally via OS CSPRNG and saves an encrypted Web3 V3 keystore:
+### 1. Create a Solana Wallet
+
+Generates a fresh Ed25519 keypair locally via OS CSPRNG and saves an encrypted keystore:
 
 ```bash
-confam create --keyfile .keys/wallet.json
-```
-*(Prompts securely for password confirmation)*
-
-To overwrite an existing keystore intentionally:
-```bash
-confam create --keyfile .keys/wallet.json --force
+confam solana create --keyfile .keys/sol_wallet.json
 ```
 
-### 2. Import an Existing Private Key
+### 2. Import an Existing Solana Key
+
+Accepts Base58-encoded secret keys or standard Solana CLI JSON arrays (`[1, 2, ...]`, Phantom / Solflare compatible):
 
 ```bash
-# Interactive prompt (hides key from terminal history and process table)
-confam import-key --keyfile .keys/wallet.json
+# Interactive prompt (hides key from shell history and process list)
+confam solana import-key --keyfile .keys/sol_wallet.json
 
-# Or pass via flag:
-confam import-key --private-key 0xYOUR_HEX_KEY --keyfile .keys/wallet.json
+# Or via flag:
+confam solana import-key --keyfile .keys/sol_wallet.json --private-key "5VERv8..."
 ```
 
-### 3. Show Wallet Address
+### 3. Show Solana Address
 
 ```bash
-confam address --keyfile .keys/wallet.json
+confam solana address --keyfile .keys/sol_wallet.json
 ```
 
-### 4. Check ETH Balance
+### 4. Check SOL Balance
 
 ```bash
-# Query balance for keystore
-confam balance --keyfile .keys/wallet.json
+# Check keystore balance
+confam solana balance --keyfile .keys/sol_wallet.json
 
-# Query balance for any arbitrary address
-confam balance --address 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+# Check any arbitrary Solana address
+confam solana balance --address 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM
 ```
 
-### 5. Check Network & Gas Market
+### 5. Check Solana Cluster Status
 
 ```bash
-# Network status (chain ID, block number, base fee, gas price)
+confam solana status --rpc-url https://api.mainnet-beta.solana.com
+```
+
+### 6. Send Native SOL Transfer
+
+```bash
+confam solana send \
+  --keyfile .keys/sol_wallet.json \
+  --to 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM \
+  --amount "0.5 sol" \
+  --wait
+```
+*(Amounts accept `sol` or `lamports`. Bare numbers default to `sol`.)*
+
+### 7. Query SPL Token Balance
+
+```bash
+# Query USDC balance on Solana (Mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v)
+confam solana token-balance \
+  --keyfile .keys/sol_wallet.json \
+  --mint EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+```
+
+### 8. List All SPL Tokens in Wallet
+
+```bash
+confam solana tokens --keyfile .keys/sol_wallet.json
+```
+
+### 9. Transfer SPL Tokens
+
+```bash
+confam solana transfer-token \
+  --keyfile .keys/sol_wallet.json \
+  --source SourceTokenAccountAddress \
+  --to DestinationTokenAccountAddress \
+  --amount "25.5" \
+  --decimals 6 \
+  --wait
+```
+
+### 10. Sign & Verify Messages with Ed25519
+
+```bash
+# Sign text locally
+confam solana sign-message --keyfile .keys/sol_wallet.json -m "Authenticate with Confam"
+
+# Verify signature
+confam solana verify-message \
+  --address 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM \
+  --signature Base58SignatureHex \
+  --message "Authenticate with Confam"
+```
+
+### 11. Export Solana Private Key
+
+```bash
+# Export in standard Base58
+confam solana export-key --keyfile .keys/sol_wallet.json
+
+# Export as Solana CLI JSON array [1,2,...]
+confam solana export-key --keyfile .keys/sol_wallet.json --json
+```
+
+---
+
+## Ethereum / EVM CLI Reference
+
+### 1. Create Wallet
+```bash
+confam create --keyfile .keys/eth_wallet.json
+```
+
+### 2. Check Balance & Network Status
+```bash
+confam balance --keyfile .keys/eth_wallet.json
 confam chain-info --rpc-url https://rpc.sepolia.org
-
-# Recommended fee market rates (EIP-1559 priority fee and max fee)
 confam gas-price
 ```
 
-### 6. Send ETH (Build, Sign Locally, and Broadcast)
-
+### 3. Send ETH Transfer
 ```bash
-# Send with human-readable units (ether, gwei, wei)
 confam send-tx \
-  --keyfile .keys/wallet.json \
+  --keyfile .keys/eth_wallet.json \
   --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 \
   --amount "0.05 ether" \
   --wait
 ```
 
-Supported units: `ether`, `eth`, `gwei`, `mwei`, `kwei`, `wei`, `szabo`, `finney`. Bare numbers default to `ether`.
-
-### 7. ERC-20 Token Balances & Transfers
-
+### 4. ERC-20 Tokens (USDT, USDC, DAI)
 ```bash
-# Check ERC-20 token balance (e.g. USDT, USDC)
-confam token-balance \
-  --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-  --keyfile .keys/wallet.json
+# Check balance
+confam token-balance --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 --keyfile .keys/eth_wallet.json
 
-# Transfer tokens (converts human decimal units automatically)
+# Transfer tokens
 confam transfer-token \
   --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-  --keyfile .keys/wallet.json \
+  --keyfile .keys/eth_wallet.json \
   --to 0xRecipientAddress \
-  --amount "25.5" \
+  --amount "50" \
   --wait
 ```
 
-### 8. Inspect Transaction Receipt
-
+### 5. Air-Gapped / Offline Signing
 ```bash
-confam receipt --tx-hash 0xYOUR_TRANSACTION_HASH
-```
-
-### 9. Sign and Verify Messages (EIP-191 `personal_sign`)
-
-```bash
-# Sign locally
-confam sign-message \
-  --keyfile .keys/wallet.json \
-  --message "Verify ownership for Confam"
-
-# Verify signature
-confam verify-message \
-  --address 0xExpectedSigner \
-  --signature 0xSignatureHex \
-  --message "Verify ownership for Confam"
-```
-
-### 10. Air-Gapped / Offline Signing
-
-Sign transactions on an offline, air-gapped machine without exposing keys to the network:
-
-```bash
-# Step 1: On offline machine, build and sign raw transaction hex
+# Sign offline
 confam sign-tx \
-  --keyfile .keys/cold_storage.json \
+  --keyfile .keys/cold.json \
   --to 0xRecipient \
   --amount "1.0 ether" \
   --nonce 0 \
@@ -189,16 +242,9 @@ confam sign-tx \
   --max-fee 30000000000 \
   --priority-fee 1500000000 > raw_tx.hex
 
-# Step 2: On online machine, broadcast the pre-signed transaction
+# Broadcast online
 confam broadcast-tx --raw-tx $(cat raw_tx.hex) --wait
 ```
-
-### 11. Securely Export Private Key
-
-```bash
-confam export-key --keyfile .keys/wallet.json
-```
-*(Requires confirmation before displaying the private key)*
 
 ---
 
@@ -210,50 +256,15 @@ Run the full automated test suite with `pytest`:
 pytest -v
 ```
 
-Or using Python's standard `unittest`:
-
-```bash
-python -m unittest discover -s tests
-```
-
-The test suite covers:
-- Exact Decimal financial precision and unit conversions.
-- Keystore encryption, decryption, and overwrite protection.
-- EIP-191 message signing, signature verification, and tampered signature rejection.
-- EIP-1559 and legacy transaction construction and local signing against a local stub JSON-RPC server.
-- Pre-flight balance validation and error handling.
-- ERC-20 calldata encoding and metadata parsing.
-- Offline transaction signing and raw broadcast.
-
----
-
-## Release & Distribution
-
-### Building Distribution Packages
-
-Generate standard Wheel (`.whl`) and Source Distribution (`.tar.gz`):
-
-```bash
-python -m pip install build
-python -m build
-```
-
-Artifacts are output to `dist/`:
-- `dist/confam_wallet-1.0.0-py3-none-any.whl`
-- `dist/confam_wallet-1.0.0.tar.gz`
-
-### Publishing to PyPI
-
-```bash
-pip install twine
-twine check dist/*
-twine upload dist/*
-```
-
-Users can then install directly via:
-```bash
-pip install confam-wallet
-```
+All 29 tests pass covering:
+- Base58 encoding, decoding, and checksum verification.
+- Ed25519 keypair generation, address derivation, signing, and verification.
+- Solana encrypted keystore creation, unlocking, and overwrite guards.
+- Lossless SOL, Lamport, and SPL token unit conversions.
+- Wire transaction binary compilation and compact-u16 serialization.
+- SPL token transfer instruction construction.
+- Ethereum EIP-1559 and legacy transaction signing and receipt polling.
+- Lossless Decimal financial arithmetic.
 
 ---
 
