@@ -152,3 +152,4 @@ def export_solana_key(keyfile: str, password: str) -> str:
     """Decrypt keystore and return the full 64-byte secret key in Base58."""
     keypair = unlock_solana_keystore(keyfile, password)
     return keypair.to_base58()
+

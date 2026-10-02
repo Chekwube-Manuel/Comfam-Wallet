@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/confam-wallet.svg)](https://pypi.org/project/confam-wallet/)
-[![Tests](https://img.shields.io/badge/tests-29%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-30%20passed-brightgreen.svg)]()
 
 A production-grade, non-custodial multi-chain CLI wallet for **Ethereum** and **Solana** built in Python.
 
@@ -13,16 +13,17 @@ Keys are generated directly on your machine using the operating system's cryptog
 
 ## Supported Ecosystems
 
-| Network | Cryptography | Native Asset | Token Standard |
-| :--- | :--- | :--- | :--- |
-| **Ethereum & EVM Chains** | `secp256k1` / Keccak-256 | ETH (or native gas) | ERC-20 (USDT, USDC, DAI, etc.) |
-| **Solana** | `Ed25519` (RFC 8032) / SHA-512 | SOL (Lamports) | SPL Tokens (USDC, USDT, etc.) |
+| Network | Cryptography | Native Asset | Token Standard | Default Keystore |
+| :--- | :--- | :--- | :--- | :--- |
+| **Solana** | `Ed25519` (RFC 8032) / SHA-512 | SOL (Lamports) | SPL Tokens (USDC, USDT, etc.) | `~/.confam/solana.json` |
+| **Ethereum & EVM** | `secp256k1` / Keccak-256 | ETH (or native gas) | ERC-20 (USDT, USDC, DAI, etc.) | `~/.confam/ethereum.json` |
 
 ---
 
 ## Key Features & Production Hardening
 
 - **Multi-Chain Architecture**: Seamlessly manage both Ethereum (EVM) and Solana (Ed25519) from a single CLI.
+- **Zero-Friction Default Keystores**: Simply run `confam solana create` or `confam create`—no need to type `--keyfile` paths on every command! Keystores default cleanly to `~/.confam/solana.json` and `~/.confam/ethereum.json`.
 - **Non-Custodial & Air-Gapped Capable**: Offline transaction signing (`sign-tx`) decoupled from network broadcast (`broadcast-tx`).
 - **Lossless Financial Precision**: Powered by Python's `Decimal` arithmetic—avoids binary float truncation bugs (e.g. `0.29 ETH` or `0.05 SOL`).
 - **Keystore Overwrite Guards**: Prevents accidental wallet destruction and permanent fund loss; requires explicit `--force` to overwrite.
@@ -67,7 +68,7 @@ pip install -e .
 Verify installation:
 ```bash
 confam --version
-# Output: confam 1.1.0
+# Output: confam 1.2.0
 ```
 
 ---
@@ -76,24 +77,32 @@ confam --version
 
 | Environment Variable | Default Option | Description |
 | :--- | :--- | :--- |
+| `CONFAM_SOLANA_KEYFILE` | `~/.confam/solana.json` | Default Solana keystore path |
+| `CONFAM_KEYFILE` | `~/.confam/ethereum.json` | Default Ethereum keystore path |
 | `CONFAM_RPC_URL` | `http://127.0.0.1:8545` | Ethereum / EVM JSON-RPC endpoint |
 | `CONFAM_SOLANA_RPC_URL` | `https://api.mainnet-beta.solana.com` | Solana JSON-RPC endpoint |
 | `CONFAM_PASSWORD` | *(None)* | Keystore decryption password (avoids prompts) |
 
-You can also pass `--rpc-url` / `-r` directly to any command to override the default endpoint.
+You can also pass `--keyfile` or `--rpc-url` directly to any command to use custom locations.
 
 ---
 
 ## Solana (SOL & SPL Token) CLI Reference
 
-All Solana commands are namespaced under `confam solana`:
+All Solana commands are namespaced under `confam solana`.
+
+> **Note**: `--keyfile` is completely optional. If omitted, Confam automatically uses `~/.confam/solana.json` (or `$CONFAM_SOLANA_KEYFILE`).
 
 ### 1. Create a Solana Wallet
 
-Generates a fresh Ed25519 keypair locally via OS CSPRNG and saves an encrypted keystore:
+Generates a fresh Ed25519 keypair locally via OS CSPRNG and saves an encrypted keystore directly to `~/.confam/solana.json`:
 
 ```bash
-confam solana create --keyfile .keys/sol_wallet.json
+# That's it! No path needed:
+confam solana create
+
+# Or specify a custom path if you want:
+confam solana create --keyfile my_wallet.json
 ```
 
 ### 2. Import an Existing Solana Key
@@ -101,26 +110,26 @@ confam solana create --keyfile .keys/sol_wallet.json
 Accepts Base58-encoded secret keys or standard Solana CLI JSON arrays (`[1, 2, ...]`, Phantom / Solflare compatible):
 
 ```bash
-# Interactive prompt (hides key from shell history and process list)
-confam solana import-key --keyfile .keys/sol_wallet.json
+# Saves into default ~/.confam/solana.json
+confam solana import-key
 
-# Or via flag:
-confam solana import-key --keyfile .keys/sol_wallet.json --private-key "5VERv8..."
+# Or specify custom keyfile:
+confam solana import-key --keyfile my_wallet.json --private-key "5VERv8..."
 ```
 
 ### 3. Show Solana Address
 
 ```bash
-confam solana address --keyfile .keys/sol_wallet.json
+confam solana address
 ```
 
 ### 4. Check SOL Balance
 
 ```bash
-# Check keystore balance
-confam solana balance --keyfile .keys/sol_wallet.json
+# Check your default wallet balance
+confam solana balance
 
-# Check any arbitrary Solana address
+# Or check any arbitrary Solana address
 confam solana balance --address 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM
 ```
 
@@ -195,14 +204,24 @@ confam solana export-key --keyfile .keys/sol_wallet.json --json
 
 ## Ethereum / EVM CLI Reference
 
+> **Note**: `--keyfile` is completely optional. If omitted, Confam automatically uses `~/.confam/ethereum.json` (or `$CONFAM_KEYFILE`).
+
 ### 1. Create Wallet
 ```bash
+# Creates default wallet at ~/.confam/ethereum.json
+confam create
+
+# Or specify a custom path:
 confam create --keyfile .keys/eth_wallet.json
 ```
 
 ### 2. Check Balance & Network Status
 ```bash
-confam balance --keyfile .keys/eth_wallet.json
+# Checks default wallet balance
+confam balance
+
+# Or specify address or custom keyfile:
+confam balance --address 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 confam chain-info --rpc-url https://rpc.sepolia.org
 confam gas-price
 ```
@@ -210,7 +229,6 @@ confam gas-price
 ### 3. Send ETH Transfer
 ```bash
 confam send-tx \
-  --keyfile .keys/eth_wallet.json \
   --to 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 \
   --amount "0.05 ether" \
   --wait
@@ -219,12 +237,11 @@ confam send-tx \
 ### 4. ERC-20 Tokens (USDT, USDC, DAI)
 ```bash
 # Check balance
-confam token-balance --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 --keyfile .keys/eth_wallet.json
+confam token-balance --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
 # Transfer tokens
 confam transfer-token \
   --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-  --keyfile .keys/eth_wallet.json \
   --to 0xRecipientAddress \
   --amount "50" \
   --wait

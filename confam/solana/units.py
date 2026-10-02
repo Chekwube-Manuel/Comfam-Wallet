@@ -87,3 +87,4 @@ def format_spl_amount(raw_amount: Union[int, str], decimals: int) -> str:
     dec = amt / divisor
     formatted = f"{dec:.{decimals}f}".rstrip("0").rstrip(".")
     return formatted if formatted else "0"
+

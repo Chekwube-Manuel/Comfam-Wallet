@@ -1,4 +1,4 @@
-"""Confam Wallet - Production-grade non-custodial Ethereum CLI wallet."""
+"""Confam Wallet - Production-grade non-custodial multi-chain CLI wallet."""
 
 import argparse
 import getpass
@@ -17,7 +17,7 @@ from confam.erc20 import (
     get_token_balance,
     get_token_metadata,
 )
-from confam.errors import ConfamError, ValidationError
+from confam.errors import ConfamError, KeystoreError, ValidationError
 from confam.keystore import (
     create_wallet,
     export_private_key,
@@ -40,10 +40,28 @@ from confam.units import (
     parse_token_amount,
 )
 
+DEFAULT_CONFAM_DIR = os.path.expanduser("~/.confam")
+DEFAULT_ETH_KEYFILE = os.path.join(DEFAULT_CONFAM_DIR, "ethereum.json")
+
 
 def _get_rpc(args) -> RpcClient:
     rpc_url = getattr(args, "rpc_url", None)
     return RpcClient(endpoint_url=rpc_url)
+
+
+def _resolve_eth_keyfile(args, for_creation: bool = False) -> str:
+    kf = getattr(args, "keyfile", None)
+    if kf:
+        return os.path.abspath(kf)
+    env_kf = os.environ.get("CONFAM_KEYFILE")
+    if env_kf:
+        return os.path.abspath(env_kf)
+    if not for_creation and not os.path.exists(DEFAULT_ETH_KEYFILE):
+        raise KeystoreError(
+            f"No Ethereum wallet found at default path '{DEFAULT_ETH_KEYFILE}'. "
+            f"Run 'confam create' first or pass --keyfile."
+        )
+    return DEFAULT_ETH_KEYFILE
 
 
 def _render_receipt(receipt: dict) -> None:
@@ -61,15 +79,17 @@ def _render_receipt(receipt: dict) -> None:
 
 
 def cmd_create(args) -> int:
+    keyfile = _resolve_eth_keyfile(args, for_creation=True)
     password = resolve_password(args, prompt="Choose a keystore password: ", confirm=True)
-    account, _ = create_wallet(args.keyfile, password, force=args.force)
+    account, _ = create_wallet(keyfile, password, force=args.force)
     print(f"created:  {to_checksum_address(account.address)}")
-    print(f"keyfile:  {args.keyfile}")
+    print(f"keyfile:  {keyfile}")
     print("Your key never left this machine. Back up the keyfile and password now.")
     return 0
 
 
 def cmd_import_key(args) -> int:
+    keyfile = _resolve_eth_keyfile(args, for_creation=True)
     private_key = args.private_key
     if not private_key:
         private_key = getpass.getpass("Enter private key hex: ")
@@ -77,28 +97,30 @@ def cmd_import_key(args) -> int:
             raise ValidationError("empty private key")
 
     password = resolve_password(args, prompt="Choose a keystore password: ", confirm=True)
-    account, _ = import_private_key(private_key, args.keyfile, password, force=args.force)
+    account, _ = import_private_key(private_key, keyfile, password, force=args.force)
     print(f"imported: {to_checksum_address(account.address)}")
-    print(f"keyfile:  {args.keyfile}")
+    print(f"keyfile:  {keyfile}")
     return 0
 
 
 def cmd_export_key(args) -> int:
+    keyfile = _resolve_eth_keyfile(args)
     if not args.yes:
-        confirm = input("WARNING: Exporting your private key exposes all funds. Continue? [y/N]: ").strip().lower()
+        confirm = input(f"WARNING: Exporting key from {keyfile} exposes all funds. Continue? [y/N]: ").strip().lower()
         if confirm not in ("y", "yes"):
             print("Export cancelled.")
             return 1
 
     password = resolve_password(args)
-    priv_key = export_private_key(args.keyfile, password)
+    priv_key = export_private_key(keyfile, password)
     print(f"private_key: {priv_key}")
     return 0
 
 
 def cmd_address(args) -> int:
+    keyfile = _resolve_eth_keyfile(args)
     password = resolve_password(args)
-    account = unlock_keystore(args.keyfile, password)
+    account = unlock_keystore(keyfile, password)
     print(to_checksum_address(account.address))
     return 0
 
@@ -108,14 +130,16 @@ def cmd_balance(args) -> int:
     if args.address:
         target_addr = validate_address(args.address)
     else:
+        keyfile = _resolve_eth_keyfile(args)
         password = resolve_password(args)
-        account = unlock_keystore(args.keyfile, password)
+        account = unlock_keystore(keyfile, password)
         target_addr = to_checksum_address(account.address)
 
     result = rpc.call("eth_getBalance", [target_addr.lower(), "latest"])
     wei = int(result, 16) if isinstance(result, str) else int(result)
-    print(f"{wei} wei")
-    print(f"{wei / 10**18:.18f} ETH")
+    print(f"address: {target_addr}")
+    print(f"balance: {wei} wei")
+    print(f"         {format_wei(wei)} ETH")
     return 0
 
 
@@ -154,8 +178,9 @@ def cmd_gas_price(args) -> int:
 
 
 def cmd_sign_message(args) -> int:
+    keyfile = _resolve_eth_keyfile(args)
     password = resolve_password(args)
-    account = unlock_keystore(args.keyfile, password)
+    account = unlock_keystore(keyfile, password)
     signed = account.sign_message(encode_defunct(text=args.message))
     raw_sig = signed.signature
     sig_hex = "0x" + raw_sig.hex() if hasattr(raw_sig, "hex") else "0x" + bytes(raw_sig).hex()
@@ -197,9 +222,10 @@ def cmd_verify_message(args) -> int:
 
 
 def cmd_send_tx(args) -> int:
+    keyfile = _resolve_eth_keyfile(args)
     value_wei = parse_ether_amount(args.amount)
     password = resolve_password(args)
-    account = unlock_keystore(args.keyfile, password)
+    account = unlock_keystore(keyfile, password)
     rpc = _get_rpc(args)
 
     from_addr = to_checksum_address(account.address)
@@ -235,8 +261,9 @@ def cmd_token_balance(args) -> int:
     if args.address:
         target_addr = validate_address(args.address)
     else:
+        keyfile = _resolve_eth_keyfile(args)
         password = resolve_password(args)
-        account = unlock_keystore(args.keyfile, password)
+        account = unlock_keystore(keyfile, password)
         target_addr = to_checksum_address(account.address)
 
     raw_bal, meta = get_token_balance(rpc, args.token, target_addr)
@@ -250,9 +277,10 @@ def cmd_token_balance(args) -> int:
 
 
 def cmd_transfer_token(args) -> int:
+    keyfile = _resolve_eth_keyfile(args)
     rpc = _get_rpc(args)
     password = resolve_password(args)
-    account = unlock_keystore(args.keyfile, password)
+    account = unlock_keystore(keyfile, password)
     from_addr = to_checksum_address(account.address)
     to_addr = validate_address(args.to)
     token_addr = validate_address(args.token)
@@ -298,8 +326,9 @@ def cmd_receipt(args) -> int:
 
 
 def cmd_sign_tx(args) -> int:
+    keyfile = _resolve_eth_keyfile(args)
     password = resolve_password(args)
-    account = unlock_keystore(args.keyfile, password)
+    account = unlock_keystore(keyfile, password)
     to_addr = validate_address(args.to)
     value_wei = parse_ether_amount(args.amount)
 
@@ -344,7 +373,7 @@ def cmd_broadcast_tx(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="confam",
-        description="Confam Wallet - non-custodial Ethereum wallet CLI",
+        description="Confam Wallet - non-custodial multi-chain (Ethereum & Solana) wallet CLI",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--debug", action="store_true", help="Print complete Python traceback on error")
@@ -352,7 +381,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_common_key(p):
-        p.add_argument("--keyfile", required=True, help="path to the encrypted keystore")
+        p.add_argument(
+            "--keyfile",
+            "-k",
+            help=f"path to the encrypted keystore (defaults to {DEFAULT_ETH_KEYFILE})",
+        )
         p.add_argument("--password", help="keystore password (defaults to a hidden prompt)")
         p.add_argument("--password-stdin", action="store_true", help="read password from standard input")
 
@@ -365,7 +398,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # create
     p = sub.add_parser("create", help="generate a new key locally and save an encrypted keystore")
-    p.add_argument("--keyfile", required=True)
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"destination path for keystore (defaults to {DEFAULT_ETH_KEYFILE})",
+    )
     p.add_argument("--password", help="keystore password (defaults to a hidden prompt)")
     p.add_argument("--password-stdin", action="store_true")
     p.add_argument("--force", "-f", action="store_true", help="overwrite existing keyfile")
@@ -373,7 +410,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # import-key
     p = sub.add_parser("import-key", help="import an existing private key into an encrypted keystore")
-    p.add_argument("--keyfile", required=True)
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"destination path for keystore (defaults to {DEFAULT_ETH_KEYFILE})",
+    )
     p.add_argument("--private-key", help="private key hex (omit for hidden prompt)")
     p.add_argument("--password")
     p.add_argument("--password-stdin", action="store_true")
@@ -393,7 +434,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # balance
     p = sub.add_parser("balance", help="print the account balance in wei and ETH")
-    p.add_argument("--keyfile", help="keystore path")
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"keystore path (defaults to {DEFAULT_ETH_KEYFILE})",
+    )
     p.add_argument("--address", "-a", help="arbitrary address to check")
     p.add_argument("--password", help="keystore password")
     p.add_argument("--password-stdin", action="store_true")
@@ -438,7 +483,11 @@ def build_parser() -> argparse.ArgumentParser:
     # token-balance
     p = sub.add_parser("token-balance", help="query ERC-20 token balance")
     p.add_argument("--token", "-t", required=True, help="ERC-20 token contract address")
-    p.add_argument("--keyfile", help="keystore path")
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"keystore path (defaults to {DEFAULT_ETH_KEYFILE})",
+    )
     p.add_argument("--address", "-a", help="wallet address to check")
     p.add_argument("--password", help="keystore password")
     p.add_argument("--password-stdin", action="store_true")
@@ -496,13 +545,6 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.command in ("balance", "token-balance"):
-            if not getattr(args, "keyfile", None) and not getattr(args, "address", None):
-                parser.error(f"{args.command} requires either --keyfile or --address")
-        elif args.command == "solana":
-            if getattr(args, "solana_command", None) in ("balance", "token-balance", "tokens"):
-                if not getattr(args, "keyfile", None) and not getattr(args, "address", None):
-                    parser.error(f"solana {args.solana_command} requires either --keyfile or --address")
         return args.func(args)
     except ConfamError as exc:
         if getattr(args, "debug", False):
@@ -510,3 +552,4 @@ def main(argv=None) -> int:
         raise SystemExit(f"error: {exc}")
     except KeyboardInterrupt:
         raise SystemExit("\nInterrupted.")
+

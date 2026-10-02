@@ -71,3 +71,4 @@ def b58decode_check(text: str) -> bytes:
     if check != digest:
         raise ValidationError("Invalid Base58 checksum")
     return data
+

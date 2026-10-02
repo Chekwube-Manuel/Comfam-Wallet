@@ -293,6 +293,33 @@ class SolanaTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", buf8.getvalue())
 
+    def test_default_keyfile_creation_and_resolution(self):
+        """When --keyfile is omitted, commands automatically resolve to CONFAM_SOLANA_KEYFILE / default."""
+        custom_default = os.path.join(self.tmp.name, "auto_default_sol.json")
+        os.environ["CONFAM_SOLANA_KEYFILE"] = custom_default
+        try:
+            # Create without --keyfile
+            rc = main(["solana", "create", "--password", "autopass"])
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.exists(custom_default))
+
+            # Address without --keyfile
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = main(["solana", "address", "--password", "autopass"])
+            self.assertEqual(rc, 0)
+            self.assertTrue(len(buf.getvalue().strip()) >= 32)
+
+            # Balance without --keyfile
+            buf2 = io.StringIO()
+            with redirect_stdout(buf2):
+                rc = main(["solana", "balance", "--password", "autopass"])
+            self.assertEqual(rc, 0)
+            self.assertIn("2.5 SOL", buf2.getvalue())
+        finally:
+            os.environ.pop("CONFAM_SOLANA_KEYFILE", None)
+
 
 if __name__ == "__main__":
     unittest.main()
+

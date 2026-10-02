@@ -135,3 +135,4 @@ class SolanaRpcClient:
         """Fetch token supply and decimals for a mint."""
         res = self.call("getTokenSupply", [mint, {"commitment": "confirmed"}])
         return res.get("value", {})
+

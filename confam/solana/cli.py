@@ -7,7 +7,7 @@ import os
 import sys
 from typing import Optional
 
-from confam.errors import ConfamError, ValidationError
+from confam.errors import ConfamError, KeystoreError, ValidationError
 from confam.keystore import resolve_password
 from confam.solana.base58 import b58decode, b58encode
 from confam.solana.keypair import SolanaKeypair
@@ -35,22 +35,42 @@ from confam.solana.units import (
     parse_spl_amount,
 )
 
+DEFAULT_CONFAM_DIR = os.path.expanduser("~/.confam")
+DEFAULT_SOLANA_KEYFILE = os.path.join(DEFAULT_CONFAM_DIR, "solana.json")
+
 
 def _get_solana_rpc(args) -> SolanaRpcClient:
     rpc_url = getattr(args, "rpc_url", None)
     return SolanaRpcClient(endpoint_url=rpc_url)
 
 
+def _resolve_solana_keyfile(args, for_creation: bool = False) -> str:
+    kf = getattr(args, "keyfile", None)
+    if kf:
+        return os.path.abspath(kf)
+    env_kf = os.environ.get("CONFAM_SOLANA_KEYFILE")
+    if env_kf:
+        return os.path.abspath(env_kf)
+    if not for_creation and not os.path.exists(DEFAULT_SOLANA_KEYFILE):
+        raise KeystoreError(
+            f"No Solana wallet found at default path '{DEFAULT_SOLANA_KEYFILE}'. "
+            f"Run 'confam solana create' first or pass --keyfile."
+        )
+    return DEFAULT_SOLANA_KEYFILE
+
+
 def cmd_solana_create(args) -> int:
+    keyfile = _resolve_solana_keyfile(args, for_creation=True)
     password = resolve_password(args, prompt="Choose a keystore password: ", confirm=True)
-    keypair, _ = create_solana_wallet(args.keyfile, password, force=args.force)
+    keypair, _ = create_solana_wallet(keyfile, password, force=args.force)
     print(f"created:  {keypair.address}")
-    print(f"keyfile:  {args.keyfile}")
+    print(f"keyfile:  {keyfile}")
     print("Security: Solana Ed25519 key generated locally. Back up your keyfile and password.")
     return 0
 
 
 def cmd_solana_import(args) -> int:
+    keyfile = _resolve_solana_keyfile(args, for_creation=True)
     key_input = args.private_key
     if not key_input:
         key_input = getpass.getpass("Enter Solana private key (Base58 or [1,2,...] JSON): ")
@@ -58,21 +78,22 @@ def cmd_solana_import(args) -> int:
             raise ValidationError("Empty private key")
 
     password = resolve_password(args, prompt="Choose a keystore password: ", confirm=True)
-    keypair, _ = import_solana_key(key_input, args.keyfile, password, force=args.force)
+    keypair, _ = import_solana_key(key_input, keyfile, password, force=args.force)
     print(f"imported: {keypair.address}")
-    print(f"keyfile:  {args.keyfile}")
+    print(f"keyfile:  {keyfile}")
     return 0
 
 
 def cmd_solana_export(args) -> int:
+    keyfile = _resolve_solana_keyfile(args)
     if not args.yes:
-        confirm = input("WARNING: Exporting your private key exposes all funds. Continue? [y/N]: ").strip().lower()
+        confirm = input(f"WARNING: Exporting key from {keyfile} exposes all funds. Continue? [y/N]: ").strip().lower()
         if confirm not in ("y", "yes"):
             print("Export cancelled.")
             return 1
 
     password = resolve_password(args)
-    keypair = unlock_solana_keystore(args.keyfile, password)
+    keypair = unlock_solana_keystore(keyfile, password)
     if args.json:
         print(f"private_key: {json.dumps(keypair.to_json_array())}")
     else:
@@ -81,8 +102,9 @@ def cmd_solana_export(args) -> int:
 
 
 def cmd_solana_address(args) -> int:
+    keyfile = _resolve_solana_keyfile(args)
     password = resolve_password(args)
-    keypair = unlock_solana_keystore(args.keyfile, password)
+    keypair = unlock_solana_keystore(keyfile, password)
     print(keypair.address)
     return 0
 
@@ -92,8 +114,9 @@ def cmd_solana_balance(args) -> int:
     if args.address:
         target_addr = args.address.strip()
     else:
+        keyfile = _resolve_solana_keyfile(args)
         password = resolve_password(args)
-        keypair = unlock_solana_keystore(args.keyfile, password)
+        keypair = unlock_solana_keystore(keyfile, password)
         target_addr = keypair.address
 
     lamports = rpc.get_balance(target_addr)
@@ -117,8 +140,9 @@ def cmd_solana_status(args) -> int:
 
 
 def cmd_solana_sign_message(args) -> int:
+    keyfile = _resolve_solana_keyfile(args)
     password = resolve_password(args)
-    keypair = unlock_solana_keystore(args.keyfile, password)
+    keypair = unlock_solana_keystore(keyfile, password)
     sig_bytes = keypair.sign(args.message.encode("utf-8"))
     sig_b58 = b58encode(sig_bytes)
     print(sig_b58)
@@ -141,18 +165,17 @@ def cmd_solana_verify_message(args) -> int:
 
 
 def cmd_solana_send(args) -> int:
+    keyfile = _resolve_solana_keyfile(args)
     lamports = parse_sol_amount(args.amount)
     password = resolve_password(args)
-    keypair = unlock_solana_keystore(args.keyfile, password)
+    keypair = unlock_solana_keystore(keyfile, password)
     rpc = _get_solana_rpc(args)
 
     to_bytes = b58decode(args.to.strip())
     if len(to_bytes) != 32:
         raise ValidationError(f"Invalid recipient address: '{args.to}'")
 
-    # Check sender balance
     sender_lamports = rpc.get_balance(keypair.address)
-    # Estimate standard transaction fee (5,000 lamports = 0.000005 SOL)
     fee_estimate = 5000
     if sender_lamports < lamports + fee_estimate:
         raise ValidationError(
@@ -185,8 +208,9 @@ def cmd_solana_token_balance(args) -> int:
     if args.address:
         target_addr = args.address.strip()
     else:
+        keyfile = _resolve_solana_keyfile(args)
         password = resolve_password(args)
-        keypair = unlock_solana_keystore(args.keyfile, password)
+        keypair = unlock_solana_keystore(keyfile, password)
         target_addr = keypair.address
 
     mint = args.mint.strip()
@@ -204,8 +228,9 @@ def cmd_solana_tokens(args) -> int:
     if args.address:
         target_addr = args.address.strip()
     else:
+        keyfile = _resolve_solana_keyfile(args)
         password = resolve_password(args)
-        keypair = unlock_solana_keystore(args.keyfile, password)
+        keypair = unlock_solana_keystore(keyfile, password)
         target_addr = keypair.address
 
     tokens = get_all_spl_tokens(rpc, target_addr)
@@ -222,9 +247,10 @@ def cmd_solana_tokens(args) -> int:
 
 
 def cmd_solana_transfer_token(args) -> int:
+    keyfile = _resolve_solana_keyfile(args)
     rpc = _get_solana_rpc(args)
     password = resolve_password(args)
-    keypair = unlock_solana_keystore(args.keyfile, password)
+    keypair = unlock_solana_keystore(keyfile, password)
 
     source_token_acc = b58decode(args.source.strip())
     dest_token_acc = b58decode(args.to.strip())
@@ -260,7 +286,11 @@ def register_solana_subparser(subparsers):
     sol_sub = sol_parser.add_subparsers(dest="solana_command", required=True)
 
     def add_common_key(p):
-        p.add_argument("--keyfile", required=True, help="path to encrypted Solana keystore")
+        p.add_argument(
+            "--keyfile",
+            "-k",
+            help=f"path to encrypted Solana keystore (defaults to {DEFAULT_SOLANA_KEYFILE})",
+        )
         p.add_argument("--password", help="keystore password")
         p.add_argument("--password-stdin", action="store_true", help="read password from stdin")
 
@@ -273,15 +303,23 @@ def register_solana_subparser(subparsers):
 
     # create
     p = sol_sub.add_parser("create", help="generate a new Solana Ed25519 keypair and encrypted keystore")
-    p.add_argument("--keyfile", required=True)
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"destination path for keystore (defaults to {DEFAULT_SOLANA_KEYFILE})",
+    )
     p.add_argument("--password", help="keystore password")
     p.add_argument("--password-stdin", action="store_true")
-    p.add_argument("--force", "-f", action="store_true")
+    p.add_argument("--force", "-f", action="store_true", help="overwrite existing keystore")
     p.set_defaults(func=cmd_solana_create)
 
     # import-key
     p = sol_sub.add_parser("import-key", help="import Solana private key (Base58 or [1,2,...] JSON)")
-    p.add_argument("--keyfile", required=True)
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"destination path for keystore (defaults to {DEFAULT_SOLANA_KEYFILE})",
+    )
     p.add_argument("--private-key", help="Solana private key string")
     p.add_argument("--password")
     p.add_argument("--password-stdin", action="store_true")
@@ -302,7 +340,11 @@ def register_solana_subparser(subparsers):
 
     # balance
     p = sol_sub.add_parser("balance", help="query SOL balance")
-    p.add_argument("--keyfile", help="Solana keystore path")
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"Solana keystore path (defaults to {DEFAULT_SOLANA_KEYFILE})",
+    )
     p.add_argument("--address", "-a", help="Solana Base58 address to check")
     p.add_argument("--password", help="keystore password")
     p.add_argument("--password-stdin", action="store_true")
@@ -340,7 +382,11 @@ def register_solana_subparser(subparsers):
     # token-balance
     p = sol_sub.add_parser("token-balance", help="query SPL token balance for a mint")
     p.add_argument("--mint", "-m", required=True, help="SPL token mint address")
-    p.add_argument("--keyfile", help="Solana keystore path")
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"Solana keystore path (defaults to {DEFAULT_SOLANA_KEYFILE})",
+    )
     p.add_argument("--address", "-a", help="Solana owner address")
     p.add_argument("--password", help="keystore password")
     p.add_argument("--password-stdin", action="store_true")
@@ -349,7 +395,11 @@ def register_solana_subparser(subparsers):
 
     # tokens
     p = sol_sub.add_parser("tokens", help="list all SPL tokens in wallet")
-    p.add_argument("--keyfile", help="Solana keystore path")
+    p.add_argument(
+        "--keyfile",
+        "-k",
+        help=f"Solana keystore path (defaults to {DEFAULT_SOLANA_KEYFILE})",
+    )
     p.add_argument("--address", "-a", help="Solana owner address")
     p.add_argument("--password", help="keystore password")
     p.add_argument("--password-stdin", action="store_true")
@@ -369,3 +419,4 @@ def register_solana_subparser(subparsers):
     p.set_defaults(func=cmd_solana_transfer_token)
 
     return sol_parser
+
